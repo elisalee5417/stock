@@ -2,7 +2,7 @@ name: Update Stock Dashboard
 
 on:
   schedule:
-    - cron: '0 1-7 * * 1-5' # 台股交易時段每小時跑一次 (UTC 1-7 是台灣 9-15)
+    - cron: '0 1-7 * * 1-5' # 台灣交易時段
   workflow_dispatch: 
 
 jobs:
@@ -17,14 +17,24 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install yfinance pandas
 
       - name: Run script
         run: python stock.py
+
+      - name: Check files # 🔍 新增這步：檢查檔案有沒有生出來
+        run: |
+          ls -l
+          if [ ! -f index.html ]; then
+            echo "錯誤：index.html 沒有被產生！請檢查 stock.py 的邏輯。"
+            exit 1
+          fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
+          publish_dir: . # 發佈當前目錄
+          # 這裡我們只想要網頁檔案，不想要原始碼
+          exclude_assets: '.github,stock.py,requirements.txt' 
           publish_branch: gh-pages
