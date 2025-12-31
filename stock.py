@@ -1,43 +1,23 @@
 import sys
 import io
 import yfinance as yf
-import pandas as pd
 from datetime import datetime
 
-# 解決環境編碼
+# 解決編碼問題
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
-STOCK_ID = "6148.TWO"
-ZONES = {
-    'sup_low': 24.0,
-    'sup_high': 24.6,
-    'res_low': 26.5,
-    'res_high': 28.0
-}
 
 def generate_html(status, detail, price, color):
     html_content = f"""
     <!DOCTYPE html>
     <html lang="zh-Hant">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>交易監控看板</title>
-        <style>
-            body {{ font-family: sans-serif; text-align: center; background-color: #f4f7f6; padding: 20px; }}
-            .card {{ background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); display: inline-block; width: 320px; border-top: 10px solid {color}; }}
-            .status {{ font-size: 38px; font-weight: bold; color: {color}; margin: 15px 0; }}
-            .price {{ font-size: 24px; color: #333; }}
-            .footer {{ color: #999; font-size: 11px; margin-top: 20px; }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>{STOCK_ID} 監控</h2>
-            <div class="price">現價: {price:.2f}</div>
-            <div class="status">{status}</div>
-            <div style="background:#eee; padding:10px; border-radius:10px;">{detail}</div>
-            <div class="footer">更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+    <head><meta charset="UTF-8"><title>監控看板</title></head>
+    <body style="text-align:center; padding:50px; background:#f4f4f4; font-family:sans-serif;">
+        <div style="background:white; display:inline-block; padding:30px; border-radius:20px; border-top:10px solid {color}; shadow: 0 4px 8px rgba(0,0,0,0.1);">
+            <h1>6148.TWO 監控</h1>
+            <p style="font-size:24px;">現價: {price:.2f}</p>
+            <h2 style="color:{color};">{status}</h2>
+            <p>{detail}</p>
+            <hr><p style="font-size:12px; color:gray;">更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         </div>
     </body>
     </html>
@@ -46,48 +26,44 @@ def generate_html(status, detail, price, color):
         f.write(html_content)
 
 def main():
-    # 1. 抓取資料
-    df = yf.download(STOCK_ID, period="5d", interval="60m", progress=False)
+    # 1. 抓取資料，強制關閉 auto_adjust 減少干擾
+    df = yf.download("6148.TWO", period="5d", interval="60m", progress=False, auto_adjust=True)
     
-    if df.empty:
-        print("抓不到資料")
-        return
+    if df.empty: return
 
-    # 2. 【暴力提取】無視所有欄位結構，直接強制轉換
+    # 2. 【核心改動】直接從數值矩陣抓取最後三筆收盤價，完全不使用欄位名稱比較
+    # 這樣可以徹底避開 Pandas 的 Series 比較錯誤
     try:
-        # 先把所有的資料轉成最原始的 numpy 陣列，再轉成清單
-        # 我們只鎖定 'Close' 欄位，不論它在哪一層
-        raw_prices = df.loc[:, df.columns.get_level_values(0) == 'Close'].values.flatten().tolist()
+        # 抓取 Close 欄位的最後三個數字
+        close_list = df['Close'].values.flatten().tolist()
+        # 過濾掉空值
+        clean_prices = [float(p) for p in close_list if str(p) != 'nan']
         
-        # 移除空值並確保是純 float 數字
-        clean_prices = [float(p) for p in raw_prices if str(p) != 'nan']
-        
-        if len(clean_prices) < 3:
-            print(f"資料不足：只有 {len(clean_prices)} 筆有效價格")
-            return
-            
-        # 到這一步，current_p 絕對、百分之百只是個「數字」，不再是 Series
-        current_p = clean_prices[-1]
-        last_1h = clean_prices[-2]
-        prev_1h = clean_prices[-3]
-        
-        print(f"DEBUG - 當前價格: {current_p}, 類型: {type(current_p)}")
-        
-    except Exception as e:
-        print(f"解析崩潰: {e}")
+        c_p = clean_prices[-1]
+        l_p = clean_prices[-2]
+        p_p = clean_prices[-3]
+    except:
         return
 
-    # 3. 判斷邏輯
-    # 這次絕對不會在下面這一行報 ValueError，因為 current_p 已經是純 float
-    if current_p < ZONES['sup_low']:
-        generate_html("⚠️ 破位", f"跌破支撐 {ZONES['sup_low']}", current_p, "red")
-    elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
-        if current_p < ZONES['res_high']:
-            generate_html("✅ 站穩", f"守住轉折 {ZONES['sup_high']}", current_p, "green")
+    # 3. 定義位階 (手動定義數字，避免從字典讀取可能發生的型別錯誤)
+    S_LOW = 24.0
+    S_HIGH = 24.6
+    R_HIGH = 28.0
+
+    # 4. 【暴力比較】強制將變數轉為 float 後再比較
+    cur = float(c_p)
+    last = float(l_p)
+    prev = float(p_p)
+
+    if cur < S_LOW:
+        generate_html("⚠️ 破位", f"跌破 {S_LOW}", cur, "red")
+    elif prev > S_HIGH and last > S_HIGH:
+        if cur < R_HIGH:
+            generate_html("✅ 站穩", f"守住 {S_HIGH}", cur, "green")
         else:
-            generate_html("🚀 突破", f"衝過壓力 {ZONES['res_high']}", current_p, "blue")
+            generate_html("🚀 突破", f"衝過 {R_HIGH}", cur, "blue")
     else:
-        generate_html("🔎 觀察", "區間震盪中", current_p, "orange")
+        generate_html("🔎 觀察", "區間震盪", cur, "orange")
 
 if __name__ == "__main__":
     main()
