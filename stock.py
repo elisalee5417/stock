@@ -38,7 +38,7 @@ def generate_html(status, detail, price, color):
             <div class="price">現價: {price:.2f}</div>
             <div class="status">{status}</div>
             <div style="background:#eee; padding:10px; border-radius:10px;">{detail}</div>
-            <div class="footer">更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+            <div class="footer">更新於: {datetime.now().strftime('%H:%M:%S')}</div>
         </div>
     </body>
     </html>
@@ -47,26 +47,27 @@ def generate_html(status, detail, price, color):
         f.write(html_content)
 
 def main():
-    # 1. 下載資料
+    # 抓取資料
     df = yf.download(STOCK_ID, period="5d", interval="60m", progress=False)
     
-    if df.empty:
+    if df.empty or len(df) < 3:
         print("資料抓取失敗")
         return
 
-    # 2. 強制簡化資料結構 (解決 Multi-index 問題)
-    # 如果有多重索引，只保留 Close 這一欄並對應到代號
+    # --- 關鍵修正：確保提取為純數字 (Scalar) ---
     try:
+        # 1. 處理可能的 Multi-index (多重索引) 問題
         if isinstance(df.columns, pd.MultiIndex):
-            close_data = df.xs('Close', axis=1, level=0)[STOCK_ID]
+            # 如果是多重索引，取出 Close 這一欄並對應到我們的股票代號
+            close_series = df.xs('Close', axis=1, level=0)[STOCK_ID]
         else:
-            close_data = df['Close']
+            close_series = df['Close']
             
-        # 轉成單純的 List 確保提取的是純數字
-        prices = close_data.dropna().tolist()
+        # 2. 去除空值並轉成純 Python List，確保後續 iloc 抓到的是單一數值
+        prices = close_series.dropna().tolist()
         
         if len(prices) < 3:
-            print("K線數量不足")
+            print("解析出的價格數量不足")
             return
             
         current_p = float(prices[-1])
@@ -77,7 +78,7 @@ def main():
         print(f"解析數值錯誤: {e}")
         return
 
-    # 3. 判斷邏輯
+    # 判斷邏輯
     if current_p < ZONES['sup_low']:
         generate_html("⚠️ 破位", f"跌破 {ZONES['sup_low']}", current_p, "red")
     elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
