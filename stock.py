@@ -53,30 +53,32 @@ def main():
         print("抓不到資料")
         return
 
-    # 2. 【終極解決方案】完全拋棄 Pandas 的索引，直接提取數字
+    # 2. 【暴力提取】無視所有欄位結構，直接強制轉換
     try:
-        # 我們直接找出名為 Close 的所有數值，不管它在第幾層
-        close_values = df.loc[:, df.columns.get_level_values(0) == 'Close'].values.flatten()
+        # 先把所有的資料轉成最原始的 numpy 陣列，再轉成清單
+        # 我們只鎖定 'Close' 欄位，不論它在哪一層
+        raw_prices = df.loc[:, df.columns.get_level_values(0) == 'Close'].values.flatten().tolist()
         
-        # 過濾掉不是數字的內容
-        prices = [float(p) for p in close_values if pd.notnull(p)]
+        # 移除空值並確保是純 float 數字
+        clean_prices = [float(p) for p in raw_prices if str(p) != 'nan']
         
-        if len(prices) < 3:
-            print(f"有效資料不足，只有 {len(prices)} 筆")
+        if len(clean_prices) < 3:
+            print(f"資料不足：只有 {len(clean_prices)} 筆有效價格")
             return
             
-        # 現在 prices 是一個純粹的數字清單 [25.1, 25.3, 25.2...]
-        current_p = prices[-1]
-        last_1h = prices[-2]
-        prev_1h = prices[-3]
+        # 到這一步，current_p 絕對、百分之百只是個「數字」，不再是 Series
+        current_p = clean_prices[-1]
+        last_1h = clean_prices[-2]
+        prev_1h = clean_prices[-3]
         
-        print(f"Debug: 抓到價格 {current_p}")
+        print(f"DEBUG - 當前價格: {current_p}, 類型: {type(current_p)}")
         
     except Exception as e:
-        print(f"數據解析崩潰: {e}")
+        print(f"解析崩潰: {e}")
         return
 
-    # 3. 判斷邏輯 (現在 current_p 保證是純數字，不會再噴 ValueError)
+    # 3. 判斷邏輯
+    # 這次絕對不會在下面這一行報 ValueError，因為 current_p 已經是純 float
     if current_p < ZONES['sup_low']:
         generate_html("⚠️ 破位", f"跌破支撐 {ZONES['sup_low']}", current_p, "red")
     elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
