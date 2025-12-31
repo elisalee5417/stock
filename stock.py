@@ -38,7 +38,7 @@ def generate_html(status, detail, price, color):
             <div class="price">現價: {price:.2f}</div>
             <div class="status">{status}</div>
             <div style="background:#eee; padding:10px; border-radius:10px;">{detail}</div>
-            <div class="footer">更新於: {datetime.now().strftime('%H:%M:%S')}</div>
+            <div class="footer">最後更新時間: {datetime.now().strftime('%H:%M:%S')}</div>
         </div>
     </body>
     </html>
@@ -47,47 +47,43 @@ def generate_html(status, detail, price, color):
         f.write(html_content)
 
 def main():
-    # 抓取資料
+    # 1. 下載資料
     df = yf.download(STOCK_ID, period="5d", interval="60m", progress=False)
     
-    if df.empty or len(df) < 3:
+    if df.empty:
         print("資料抓取失敗")
         return
 
-    # --- 關鍵修正：確保提取為純數字 (Scalar) ---
+    # 2. 強制攤平所有層級，解決 Multi-index 問題
+    # 這步會把複雜的表格變成簡單的「Close, Open, High...」
+    df.columns = df.columns.get_level_values(0) 
+    
     try:
-        # 1. 處理可能的 Multi-index (多重索引) 問題
-        if isinstance(df.columns, pd.MultiIndex):
-            # 如果是多重索引，取出 Close 這一欄並對應到我們的股票代號
-            close_series = df.xs('Close', axis=1, level=0)[STOCK_ID]
-        else:
-            close_series = df['Close']
-            
-        # 2. 去除空值並轉成純 Python List，確保後續 iloc 抓到的是單一數值
-        prices = close_series.dropna().tolist()
+        # 3. 提取收盤價並轉成純數字 List
+        prices = df['Close'].dropna().astype(float).tolist()
         
         if len(prices) < 3:
-            print("解析出的價格數量不足")
+            print("解析出的價格數量不足 3 根 K 線")
             return
             
-        current_p = float(prices[-1])
-        last_1h = float(prices[-2])
-        prev_1h = float(prices[-3])
+        current_p = prices[-1]
+        last_1h = prices[-2]
+        prev_1h = prices[-3]
         
     except Exception as e:
         print(f"解析數值錯誤: {e}")
         return
 
-    # 判斷邏輯
+    # 4. 判斷邏輯
     if current_p < ZONES['sup_low']:
-        generate_html("⚠️ 破位", f"跌破 {ZONES['sup_low']}", current_p, "red")
+        generate_html("⚠️ 破位", f"目前價格 {current_p:.2f} 跌破支撐 {ZONES['sup_low']}", current_p, "red")
     elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
         if current_p < ZONES['res_high']:
-            generate_html("✅ 站穩", f"守住 {ZONES['sup_high']}", current_p, "green")
+            generate_html("✅ 結構站穩", f"守住轉折 {ZONES['sup_high']}，具備進攻資格", current_p, "green")
         else:
-            generate_html("🚀 突破", f"衝過 {ZONES['res_high']}", current_p, "blue")
+            generate_html("🚀 突破", f"已衝破壓力區 {ZONES['res_high']}", current_p, "blue")
     else:
-        generate_html("🔎 觀察", "區間盤整中", current_p, "orange")
+        generate_html("🔎 觀察", "區間震盪，等待訊號", current_p, "orange")
 
 if __name__ == "__main__":
     main()
