@@ -4,16 +4,15 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 
-# 解決 GitHub 環境編碼問題
+# 解決環境編碼
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# --- 核心參數輸入 ---
-STOCK_ID = "6148.TWO"  # 驊宏資
+STOCK_ID = "6148.TWO"
 ZONES = {
-    'sup_low': 24.0,    # 大箱型底
-    'sup_high': 24.6,   # 短線轉折
-    'res_low': 26.5,    # 壓力觀察
-    'res_high': 28.0    # 波段進攻
+    'sup_low': 24.0,
+    'sup_high': 24.6,
+    'res_low': 26.5,
+    'res_high': 28.0
 }
 
 def generate_html(status, detail, price, color):
@@ -38,7 +37,7 @@ def generate_html(status, detail, price, color):
             <div class="price">現價: {price:.2f}</div>
             <div class="status">{status}</div>
             <div style="background:#eee; padding:10px; border-radius:10px;">{detail}</div>
-            <div class="footer">最後更新時間: {datetime.now().strftime('%H:%M:%S')}</div>
+            <div class="footer">更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
         </div>
     </body>
     </html>
@@ -47,43 +46,46 @@ def generate_html(status, detail, price, color):
         f.write(html_content)
 
 def main():
-    # 1. 下載資料
+    # 1. 抓取資料
     df = yf.download(STOCK_ID, period="5d", interval="60m", progress=False)
     
     if df.empty:
-        print("資料抓取失敗")
+        print("抓不到資料")
         return
 
-    # 2. 強制攤平所有層級，解決 Multi-index 問題
-    # 這步會把複雜的表格變成簡單的「Close, Open, High...」
-    df.columns = df.columns.get_level_values(0) 
-    
+    # 2. 【終極解決方案】完全拋棄 Pandas 的索引，直接提取數字
     try:
-        # 3. 提取收盤價並轉成純數字 List
-        prices = df['Close'].dropna().astype(float).tolist()
+        # 我們直接找出名為 Close 的所有數值，不管它在第幾層
+        close_values = df.loc[:, df.columns.get_level_values(0) == 'Close'].values.flatten()
+        
+        # 過濾掉不是數字的內容
+        prices = [float(p) for p in close_values if pd.notnull(p)]
         
         if len(prices) < 3:
-            print("解析出的價格數量不足 3 根 K 線")
+            print(f"有效資料不足，只有 {len(prices)} 筆")
             return
             
+        # 現在 prices 是一個純粹的數字清單 [25.1, 25.3, 25.2...]
         current_p = prices[-1]
         last_1h = prices[-2]
         prev_1h = prices[-3]
         
+        print(f"Debug: 抓到價格 {current_p}")
+        
     except Exception as e:
-        print(f"解析數值錯誤: {e}")
+        print(f"數據解析崩潰: {e}")
         return
 
-    # 4. 判斷邏輯
+    # 3. 判斷邏輯 (現在 current_p 保證是純數字，不會再噴 ValueError)
     if current_p < ZONES['sup_low']:
-        generate_html("⚠️ 破位", f"目前價格 {current_p:.2f} 跌破支撐 {ZONES['sup_low']}", current_p, "red")
+        generate_html("⚠️ 破位", f"跌破支撐 {ZONES['sup_low']}", current_p, "red")
     elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
         if current_p < ZONES['res_high']:
-            generate_html("✅ 結構站穩", f"守住轉折 {ZONES['sup_high']}，具備進攻資格", current_p, "green")
+            generate_html("✅ 站穩", f"守住轉折 {ZONES['sup_high']}", current_p, "green")
         else:
-            generate_html("🚀 突破", f"已衝破壓力區 {ZONES['res_high']}", current_p, "blue")
+            generate_html("🚀 突破", f"衝過壓力 {ZONES['res_high']}", current_p, "blue")
     else:
-        generate_html("🔎 觀察", "區間震盪，等待訊號", current_p, "orange")
+        generate_html("🔎 觀察", "區間震盪中", current_p, "orange")
 
 if __name__ == "__main__":
     main()
