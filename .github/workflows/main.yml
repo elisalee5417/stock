@@ -2,14 +2,14 @@ name: Update Stock Dashboard
 
 on:
   schedule:
-    - cron: '0 * * * *' 
+    - cron: '0 1-7 * * 1-5' # 台股交易時段每小時跑一次 (UTC 1-7 是台灣 9-15)
   workflow_dispatch: 
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3 # 使用較新版本
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -17,17 +17,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install yfinance pandas
+        run: pip install -r requirements.txt
 
       - name: Run script
         run: python stock.py
-
-      - name: Check if index.html exists
-        run: ls -l index.html # 這行用來檢查檔案是否真的有產生
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./  # 確保指向根目錄
+          publish_dir: ./
           publish_branch: gh-pages
