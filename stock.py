@@ -7,13 +7,13 @@ from datetime import datetime
 # 解決 GitHub 環境編碼問題
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# --- 核心參數輸入 (您可以隨時手動修改這裡的數字) ---
-STOCK_ID = "6148.TWO"  # 驊宏資，若是上市股票請用 .TW (如 2330.TW)
+# --- 核心參數輸入 ---
+STOCK_ID = "6148.TWO"  # 驊宏資
 ZONES = {
-    'sup_low': 24.0,    # 大箱型底 (跌破就損平或止損)
-    'sup_high': 24.6,   # 短線轉折 (站穩此位是強勢做多的基礎)
-    'res_low': 26.5,    # 壓力區底部 (預計部分停利點)
-    'res_high': 28.0    # 波段結構點 (站穩則開啟新一波攻勢)
+    'sup_low': 24.0,    # 大箱型底
+    'sup_high': 24.6,   # 短線轉折
+    'res_low': 26.5,    # 壓力區底部
+    'res_high': 28.0    # 波段結構點
 }
 
 def generate_html(status, detail, price, color):
@@ -48,32 +48,32 @@ def generate_html(status, detail, price, color):
         f.write(html_content)
 
 def main():
-    # 抓取 1H 資料 (監控短線站穩)
+    # 抓取 1H 資料
     df = yf.download(STOCK_ID, period="5d", interval="60m", progress=False)
     
     if df.empty or len(df) < 3:
-        print("資料抓取失敗，請檢查代碼是否正確")
+        print("資料抓取失敗或資料不足")
         return
 
-    current_p = df['Close'].iloc[-1]
-    last_1h = df['Close'].iloc[-2]
-    prev_1h = df['Close'].iloc[-3]
+    # --- 關鍵修正處：使用 .item() 或 float() 確保取到的是單一數值 ---
+    try:
+        current_p = float(df['Close'].iloc[-1])
+        last_1h = float(df['Close'].iloc[-2])
+        prev_1h = float(df['Close'].iloc[-3])
+    except Exception as e:
+        print(f"數值轉換出錯: {e}")
+        return
 
-    # --- 您的交易邏輯 ---
-    # 1. 跌破支撐 (紅色)
+    # --- 交易邏輯 ---
     if current_p < ZONES['sup_low']:
-        generate_html("⚠️ 破位警示", f"跌破關鍵支撐 {ZONES['sup_low']}，結構轉弱請注意風險。", current_p, "#e74c3c")
-    
-    # 2. 站穩轉折 (綠色 - 做多機會)
+        generate_html("⚠️ 破位警示", f"跌破關鍵支撐 {ZONES['sup_low']}，請注意風險。", current_p, "#e74c3c")
     elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
         if current_p < ZONES['res_high']:
-            generate_html("✅ 結構站穩", f"成功守住 {ZONES['sup_high']}，目標上看停利點 {ZONES['res_low']}。", current_p, "#27ae60")
+            generate_html("✅ 結構站穩", f"成功守住 {ZONES['sup_high']}，目標上看 {ZONES['res_low']}。", current_p, "#27ae60")
         else:
-            generate_html("🚀 波段突破", f"已衝破壓力 {ZONES['res_high']}，開啟新一輪上漲空間！", current_p, "#2980b9")
-    
-    # 3. 區間震盪 (橘色)
+            generate_html("🚀 波段突破", f"已衝破壓力 {ZONES['res_high']}，開啟新上漲空間！", current_p, "#2980b9")
     else:
-        generate_html("🔎 觀察中", f"目前在 {ZONES['sup_low']}~{ZONES['sup_high']} 之間震盪，等待站穩訊號。", current_p, "#f39c12")
+        generate_html("🔎 觀察中", f"目前在區間震盪，等待 123 站穩訊號。", current_p, "#f39c12")
 
 if __name__ == "__main__":
     main()
