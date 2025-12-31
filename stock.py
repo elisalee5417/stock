@@ -38,7 +38,7 @@ def generate_html(status, detail, price, color):
             <div class="price">現價: {price:.2f}</div>
             <div class="status">{status}</div>
             <div style="background:#eee; padding:10px; border-radius:10px;">{detail}</div>
-            <div class="footer">更新於: {datetime.now().strftime('%H:%M:%S')}</div>
+            <div class="footer">更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
         </div>
     </body>
     </html>
@@ -47,24 +47,37 @@ def generate_html(status, detail, price, color):
         f.write(html_content)
 
 def main():
-    # 抓取資料
+    # 1. 下載資料
     df = yf.download(STOCK_ID, period="5d", interval="60m", progress=False)
     
-    if df.empty or len(df) < 3:
+    if df.empty:
         print("資料抓取失敗")
         return
 
-    # --- 關鍵修正：確保提取為純數字 (Scalar) ---
+    # 2. 強制簡化資料結構 (解決 Multi-index 問題)
+    # 如果有多重索引，只保留 Close 這一欄並對應到代號
     try:
-        # 使用 iloc 取值後再轉成 float，避免 Series 比較錯誤
-        current_p = float(df['Close'].iloc[-1].item()) if hasattr(df['Close'].iloc[-1], 'item') else float(df['Close'].iloc[-1])
-        last_1h = float(df['Close'].iloc[-2].item()) if hasattr(df['Close'].iloc[-2], 'item') else float(df['Close'].iloc[-2])
-        prev_1h = float(df['Close'].iloc[-3].item()) if hasattr(df['Close'].iloc[-3], 'item') else float(df['Close'].iloc[-3])
+        if isinstance(df.columns, pd.MultiIndex):
+            close_data = df.xs('Close', axis=1, level=0)[STOCK_ID]
+        else:
+            close_data = df['Close']
+            
+        # 轉成單純的 List 確保提取的是純數字
+        prices = close_data.dropna().tolist()
+        
+        if len(prices) < 3:
+            print("K線數量不足")
+            return
+            
+        current_p = float(prices[-1])
+        last_1h = float(prices[-2])
+        prev_1h = float(prices[-3])
+        
     except Exception as e:
         print(f"解析數值錯誤: {e}")
         return
 
-    # 判斷邏輯
+    # 3. 判斷邏輯
     if current_p < ZONES['sup_low']:
         generate_html("⚠️ 破位", f"跌破 {ZONES['sup_low']}", current_p, "red")
     elif prev_1h > ZONES['sup_high'] and last_1h > ZONES['sup_high']:
